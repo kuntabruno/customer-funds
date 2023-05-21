@@ -13,11 +13,11 @@ import lombok.Data;
 public class CustomerTransferRequest {
     @JsonProperty(required = true)
     @Min(value = 1, message = "From CustomerId is required")
-    private int fromCustomerId;
+    private Long fromCustomerId;
 
     @JsonProperty(required = true)
     @Min(value = 1, message = "To CustomerId is required")
-    private int toCustomerId;
+    private Long toCustomerId;
 
     @JsonProperty(required = true)
     @NotNull(message = "Amount is required")

@@ -13,7 +13,7 @@ import lombok.Data;
 public class CustomerDepositRequest {
     @JsonProperty(required = true)
     @Min(value = 1, message = "To CustomerId is required")
-    private int customerId;
+    private Long customerId;
 
     @JsonProperty(required = true)
     @NotNull(message = "Amount is required")

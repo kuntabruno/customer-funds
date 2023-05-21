@@ -2,136 +2,167 @@ package com.demo.customerfunds.services;
 
 import java.math.BigDecimal;
 
+import javax.transaction.Transactional;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import com.demo.customerfunds.dtos.CreateTransactionDto;
 import com.demo.customerfunds.dtos.CreateWalletDto;
 import com.demo.customerfunds.dtos.WalletsTransferDto;
+import com.demo.customerfunds.entities.Customer;
+import com.demo.customerfunds.entities.Transaction;
+import com.demo.customerfunds.entities.Wallet;
 import com.demo.customerfunds.enums.TransactionTypeEnum;
 import com.demo.customerfunds.exceptions.InsufficientBalanceException;
 import com.demo.customerfunds.models.CustomerModel;
-import com.demo.customerfunds.models.WalletModel;
+import com.demo.customerfunds.repositories.CustomerRepository;
+import com.demo.customerfunds.repositories.TransactionRepository;
+import com.demo.customerfunds.repositories.WalletRepository;
 import com.demo.customerfunds.requests.CreateCustomerRequest;
 import com.demo.customerfunds.requests.CustomerDepositRequest;
 import com.demo.customerfunds.requests.CustomerTransferRequest;
 import com.demo.customerfunds.requests.CustomerWalletBalanceRequest;
+import com.demo.customerfunds.responses.CreateCustomerResponse;
 import com.demo.customerfunds.responses.CustomerDepositResponse;
 import com.demo.customerfunds.responses.CustomerTransferResponse;
 import com.demo.customerfunds.responses.CustomerWalletBalanceResponse;
-import com.demo.customerfunds.utils.AmountUtils;
+import com.demo.customerfunds.utils.BalanceUtils;
 
 @Service
 public class CustomerService {
 
-    @Autowired
-    WalletService walletSvc;
+        private final CustomerRepository customerRepository;
+        private final WalletRepository walletRepository;
+        private final TransactionRepository transactionRepository;
 
-    @Autowired
-    TransactionService transactionSvc;
+        @Autowired
+        WalletService walletSvc;
 
-    @Autowired
-    AmountUtils amountUtils;
+        @Autowired
+        TransactionService transactionSvc;
 
-    public CustomerModel createCustomer(CreateCustomerRequest customerRequest) {
-        CustomerModel customer = CustomerModel.builder()
-                .name(customerRequest.getName())
-                .build();
-        // Create Customer Wallet
-        walletSvc.createCustomerWallet(new CreateWalletDto(customer.getId()));
-        return customer;
-    }
+        @Autowired
+        BalanceUtils amountUtils;
 
-    public CustomerModel getCustomer(Integer customerId) {
-        CreateCustomerRequest request = new CreateCustomerRequest("Customer");
-        CustomerModel customer = createCustomer(request);
-        customer.setId(customerId);
-
-        return customer;
-    }
-
-    public CustomerDepositResponse depositCustomerFunds(CustomerDepositRequest depositReq) {
-        CustomerModel customer = this.getCustomer(depositReq.getCustomerId());
-        WalletModel wallet = walletSvc.getCustomerWallet(customer.getId());
-        WalletModel updatedWallet = atomicallyAddAmountToWallet(wallet, depositReq.getAmount());
-
-        return new CustomerDepositResponse(AmountUtils.stringToBigDecimal(updatedWallet.getBalance()));
-    }
-
-    public CustomerTransferResponse transferCustomerFunds(CustomerTransferRequest transferReq) throws InsufficientBalanceException {
-        WalletModel senderWallet = walletSvc.getCustomerWallet(transferReq.getFromCustomerId());
-        senderWallet.setBalance(new BigDecimal(500).toString());
-        WalletModel recipientWallet = walletSvc.getCustomerWallet(transferReq.getToCustomerId());
-        BigDecimal amountToTransfer = transferReq.getAmount();
-
-        // Check if sender has enough balance in wallet
-        BigDecimal senderBalance = AmountUtils.stringToBigDecimal(senderWallet.getBalance());
-        if (senderBalance.compareTo(amountToTransfer) < 0) {
-            // Sender doesn't have enough balance
-            throw new InsufficientBalanceException("Sender wallet does not have enough balance to complete the transaction");
+        @Autowired
+        public CustomerService(CustomerRepository customerRepository, WalletRepository walletRepository,
+                        TransactionRepository transactionRepository) {
+                this.customerRepository = customerRepository;
+                this.walletRepository = walletRepository;
+                this.transactionRepository = transactionRepository;
         }
 
-        WalletsTransferDto transferDto = this.atomicallyTransferBetweenTwoAccounts(senderWallet, recipientWallet,
-                amountToTransfer);
+        public CreateCustomerResponse createCustomer(CreateCustomerRequest customerRequest) {
+                Customer customer = new Customer(customerRequest.getName());
+                customer = customerRepository.save(customer);
 
-        return new CustomerTransferResponse(transferDto.getSenderBalance(), transferDto.getRecipientBalance());
-    }
+                // Create Customer Wallet
+                walletSvc.createCustomerWallet(new CreateWalletDto(customer.getId()));
 
-    public CustomerWalletBalanceResponse getCustomerWalletBalance(CustomerWalletBalanceRequest req) {
-        Integer customerId = req.getCustomerId();
-        WalletModel wallet = walletSvc.getCustomerWallet(customerId);
-        int setAmount = customerId == null ? 0 : customerId == 2 ? 200 : customerId > 2 ? 350 : 100;
-        wallet.setBalance(new BigDecimal(setAmount).toString());
-        return new CustomerWalletBalanceResponse(AmountUtils.stringToBigDecimal(wallet.getBalance()));
-    }
+                CustomerModel customerModel = CustomerModel.fromEntity(customer);
+                return CreateCustomerResponse.fromModel(customerModel);
+        }
 
-    private WalletModel atomicallyAddAmountToWallet(WalletModel wallet, BigDecimal amountToAdd) {
-        BigDecimal amount = AmountUtils.stringToBigDecimal(wallet.getBalance());
-        BigDecimal total = amount.add(amountToAdd);
-        // Enter db Atomic Mode
-        wallet.setBalance(AmountUtils.bigDecimalToString(total));
-        transactionSvc.createTransaction(new CreateTransactionDto(null, wallet.getId(), wallet.getCustomerId(),
-                AmountUtils.bigDecimalToString(amountToAdd), TransactionTypeEnum.Debited.getType()));
-        // Save all to db here
-        // Exit db Atomic Mode
-        return wallet;
-    }
+        public CustomerModel getCustomer(Integer customerId) {
+                Customer customer = customerRepository.findById(customerId.longValue())
+                                .orElseThrow(() -> new RuntimeException("Customer not found"));
 
-    private WalletModel atomicallyReduceAmountFromWallet(WalletModel wallet, BigDecimal amountToReduce) {
-        BigDecimal amount = AmountUtils.stringToBigDecimal(wallet.getBalance());
-        BigDecimal total = amount.subtract(amountToReduce);
-        // Enter db Atomic Mode
-        wallet.setBalance(AmountUtils.bigDecimalToString(total));
-        transactionSvc.createTransaction(new CreateTransactionDto(null, wallet.getId(), wallet.getCustomerId(),
-                AmountUtils.bigDecimalToString(amountToReduce), TransactionTypeEnum.Credited.getType()));
-        // Save all to db here
+                return CustomerModel.fromEntity(customer);
+        }
 
-        // Exit db Atomic Mode
-        return wallet;
-    }
+        public CustomerDepositResponse depositCustomerFunds(CustomerDepositRequest depositReq) {
+                Customer customer = customerRepository.findById(depositReq.getCustomerId().longValue())
+                                .orElseThrow(() -> new RuntimeException("Customer not found"));
 
-    private WalletsTransferDto atomicallyTransferBetweenTwoAccounts(WalletModel senderWallet,
-            WalletModel recipientWallet, BigDecimal transferredAmount) {
-        // Sender reduce wallet balance
-        BigDecimal senderBalance = AmountUtils.stringToBigDecimal(senderWallet.getBalance());
-        senderWallet.setBalance(AmountUtils.bigDecimalToString(senderBalance.subtract(transferredAmount)));
-        transactionSvc
-                .createTransaction(new CreateTransactionDto(null, senderWallet.getId(), senderWallet.getCustomerId(),
-                        AmountUtils.bigDecimalToString(transferredAmount), TransactionTypeEnum.Credited.getType()));
+                Wallet wallet = walletRepository.findById(customer.getId())
+                                .orElseThrow(() -> new RuntimeException("Wallet not found"));
 
-        // Recipient add to wallet balance
-        BigDecimal recipientBalance = AmountUtils.stringToBigDecimal(recipientWallet.getBalance());
-        recipientWallet.setBalance(AmountUtils.bigDecimalToString(recipientBalance.add(transferredAmount)));
-        transactionSvc
-                .createTransaction(new CreateTransactionDto(null, senderWallet.getId(), senderWallet.getCustomerId(),
-                        AmountUtils.bigDecimalToString(transferredAmount), TransactionTypeEnum.Debited.getType()));
+                Wallet updatedWallet = atomicallyAddAmountToWallet(wallet, depositReq.getAmount());
 
-        // Enter db Atomic Mode
-        // Save all to db here
+                return new CustomerDepositResponse(BalanceUtils.stringToBigDecimal(updatedWallet.getBalance()));
+        }
 
-        // Exit db Atomic Mode
-        return new WalletsTransferDto(AmountUtils.stringToBigDecimal(senderWallet.getBalance()),
-                AmountUtils.stringToBigDecimal(recipientWallet.getBalance()));
+        public CustomerTransferResponse transferCustomerFunds(CustomerTransferRequest transferReq)
+                        throws InsufficientBalanceException {
+                Wallet senderWallet = walletRepository.findById(transferReq.getFromCustomerId())
+                                .orElseThrow(() -> new RuntimeException("Sender wallet not found"));
 
-    }
+                Wallet recipientWallet = walletRepository.findById(transferReq.getToCustomerId())
+                                .orElseThrow(() -> new RuntimeException("Recipient wallet not found"));
+
+                BigDecimal amountToTransfer = transferReq.getAmount();
+
+                // Check if sender has enough balance in wallet
+                BigDecimal senderBalance = BalanceUtils.stringToBigDecimal(senderWallet.getBalance());
+                if (senderBalance.compareTo(amountToTransfer) < 0) {
+                        // Sender doesn't have enough balance
+                        throw new InsufficientBalanceException(
+                                        "Sender wallet does not have enough balance to complete the transaction");
+                }
+
+                WalletsTransferDto transferDto = atomicallyTransferBetweenTwoAccounts(senderWallet, recipientWallet,
+                                amountToTransfer);
+
+                return new CustomerTransferResponse(transferDto.getSenderBalance(), transferDto.getRecipientBalance());
+        }
+
+        public CustomerWalletBalanceResponse getCustomerWalletBalance(CustomerWalletBalanceRequest req) {
+                Long customerId = req.getCustomerId();
+                Wallet wallet = walletRepository.findById(customerId)
+                                .orElseThrow(() -> new RuntimeException("Wallet not found"));
+
+                return new CustomerWalletBalanceResponse(BalanceUtils.stringToBigDecimal(wallet.getBalance()));
+        }
+
+        @Transactional
+        private Wallet atomicallyAddAmountToWallet(Wallet wallet, BigDecimal amountToAdd) {
+                BigDecimal amount = BalanceUtils.stringToBigDecimal(wallet.getBalance());
+                BigDecimal total = amount.add(amountToAdd);
+                wallet.setBalance(BalanceUtils.bigDecimalToString(total));
+                Transaction transaction = new Transaction(wallet.getId(), wallet.getCustomerId(),
+                                BalanceUtils.bigDecimalToString(amountToAdd), TransactionTypeEnum.DEBITED);
+                transactionRepository.save(transaction);
+                walletRepository.save(wallet);
+                return wallet;
+        }
+
+        @Transactional
+        private Wallet atomicallyReduceAmountFromWallet(Wallet wallet, BigDecimal amountToReduce) {
+                BigDecimal amount = BalanceUtils.stringToBigDecimal(wallet.getBalance());
+                BigDecimal total = amount.subtract(amountToReduce);
+                wallet.setBalance(BalanceUtils.bigDecimalToString(total));
+                Transaction transaction = new Transaction(wallet.getId(), wallet.getCustomerId(),
+                                BalanceUtils.bigDecimalToString(amountToReduce), TransactionTypeEnum.CREDITED);
+                transactionRepository.save(transaction);
+                walletRepository.save(wallet);
+                return wallet;
+        }
+
+        @Transactional
+        private WalletsTransferDto atomicallyTransferBetweenTwoAccounts(Wallet senderWallet,
+                        Wallet recipientWallet, BigDecimal transferredAmount) {
+                // Sender reduce wallet balance
+                BigDecimal senderBalance = BalanceUtils.stringToBigDecimal(senderWallet.getBalance());
+                senderWallet.setBalance(BalanceUtils.bigDecimalToString(senderBalance.subtract(transferredAmount)));
+                Transaction senderTransaction = new Transaction(senderWallet.getId(), senderWallet.getCustomerId(),
+                                BalanceUtils.bigDecimalToString(transferredAmount), TransactionTypeEnum.CREDITED);
+
+                // Recipient add to wallet balance
+                BigDecimal recipientBalance = BalanceUtils.stringToBigDecimal(recipientWallet.getBalance());
+                recipientWallet.setBalance(BalanceUtils.bigDecimalToString(recipientBalance.add(transferredAmount)));
+                Transaction recipientTransaction = new Transaction(recipientWallet.getId(),
+                                recipientWallet.getCustomerId(),
+                                BalanceUtils.bigDecimalToString(transferredAmount), TransactionTypeEnum.DEBITED);
+
+                // Save all to db
+                // Sender
+                walletRepository.save(senderWallet);
+                transactionRepository.save(senderTransaction);
+
+                // Recipient
+                walletRepository.save(recipientWallet);
+                transactionRepository.save(recipientTransaction);
+                return new WalletsTransferDto(BalanceUtils.stringToBigDecimal(senderWallet.getBalance()),
+                                BalanceUtils.stringToBigDecimal(recipientWallet.getBalance()));
+        }
 }

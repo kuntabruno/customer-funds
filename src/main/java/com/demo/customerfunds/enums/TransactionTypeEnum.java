@@ -6,8 +6,6 @@ import lombok.RequiredArgsConstructor;
 @Getter
 @RequiredArgsConstructor
 public enum TransactionTypeEnum {
-    Debited("Debited"),
-    Credited("Credited");
-
-    private final String type; 
+    DEBITED,
+    CREDITED;
 }

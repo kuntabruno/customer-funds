@@ -17,6 +17,7 @@ import com.demo.customerfunds.requests.CreateCustomerRequest;
 import com.demo.customerfunds.requests.CustomerDepositRequest;
 import com.demo.customerfunds.requests.CustomerTransferRequest;
 import com.demo.customerfunds.requests.CustomerWalletBalanceRequest;
+import com.demo.customerfunds.responses.CreateCustomerResponse;
 import com.demo.customerfunds.responses.CustomerDepositResponse;
 import com.demo.customerfunds.responses.CustomerTransferResponse;
 import com.demo.customerfunds.responses.CustomerWalletBalanceResponse;
@@ -37,16 +38,16 @@ public class CustomerController {
      * @return SuccessResponse<CustomerModel>
      */
     @PostMapping(value = "createCustomer")
-    public SuccessResponse<CustomerModel> createCustomer(@Valid @RequestBody CreateCustomerRequest request) {
-        CustomerModel data = customerService.createCustomer(request);
-        return new SuccessResponse<CustomerModel>(data);
+    public SuccessResponse<CreateCustomerResponse> createCustomer(@Valid @RequestBody CreateCustomerRequest request) {
+        CreateCustomerResponse data = customerService.createCustomer(request);
+        return new SuccessResponse<CreateCustomerResponse>(data);
     }
 
     /**
      * @param request CustomerDepositRequest
      * @return SuccessResponse<CustomerDepositResponse>
      */
-    @PostMapping(value = "customerDeposit")
+    @PostMapping(value = "customerDepositFunds")
     public SuccessResponse<CustomerDepositResponse> customerDeposit(
             @Valid @RequestBody CustomerDepositRequest request) {
         CustomerDepositResponse data = customerService.depositCustomerFunds(request);
@@ -73,12 +74,12 @@ public class CustomerController {
     }
 
     /**
-     * @param request CustomerWalletBalanceRequest
+     * @param customerId String
      * @return SuccessResponse<CustomerWalletBalanceResponse>
      */
-    @GetMapping(value = "customerWalletBalanceRequest")
+    @GetMapping(value = "customerWalletBalance")
     public SuccessResponse<CustomerWalletBalanceResponse> customerWalletBalance(
-          @Valid @RequestParam("customerId") @Min(value = 1, message = "CustomerId is required") int customerId) {
+          @Valid @RequestParam("customerId") @Min(value = 1, message = "CustomerId is required") Long customerId) {
         CustomerWalletBalanceRequest request = new CustomerWalletBalanceRequest(customerId);
         CustomerWalletBalanceResponse data = customerService.getCustomerWalletBalance(request);
         return new SuccessResponse<CustomerWalletBalanceResponse>(data);

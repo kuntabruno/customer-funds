@@ -4,9 +4,9 @@ import lombok.Data;
 
 @Data
 public class CreateWalletDto {
-    private int customerId;
+    private Long customerId;
 
-    public CreateWalletDto(Integer customerId) {
+    public CreateWalletDto(Long customerId) {
       this.customerId = customerId;
     }
 }

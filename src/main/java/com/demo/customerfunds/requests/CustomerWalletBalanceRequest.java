@@ -10,13 +10,13 @@ import lombok.Data;
 public class CustomerWalletBalanceRequest {
     @JsonProperty(required = true)
     @Min(value = 1, message = "CustomerId is required")
-    private int customerId;
+    private Long customerId;
 
     public CustomerWalletBalanceRequest () {
         // Default constructor is required for deserialization
     }
 
-    public CustomerWalletBalanceRequest(int customerId) {
+    public CustomerWalletBalanceRequest(Long customerId) {
         this.customerId = customerId;
     }
 }
